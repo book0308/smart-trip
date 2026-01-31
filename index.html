@@ -462,7 +462,7 @@
 
             try {
                 const response = await ai.models.generateContent({
-                    model: 'gemini-3-flash-preview',
+                    model: 'gemini-2.0-flash',
                     contents: prompt,
                     config: { responseMimeType: "application/json", tools: [{ googleSearch: {} }] }
                 });
@@ -595,15 +595,15 @@
 
             try {
                 $('#loading-title').innerText = '正在生成的極致攻略圖卡...';
-                const r1 = await ai.models.generateContent({ model: 'gemini-3-pro-preview', contents: `${commonInfo}，請製作 1.當地概況 2.必玩 3.必吃 4.交通住宿 5.預算與季節建議。請使用繁體中文 Markdown。`, config: { thinkingConfig: { thinkingBudget: 2000 } } });
+                const r1 = await ai.models.generateContent({ model: 'gemini-1.5-pro', contents: `${commonInfo}，請製作 1.當地概況 2.必玩 3.必吃 4.交通住宿 5.預算與季節建議。請使用繁體中文 Markdown。`, config: { thinkingConfig: { thinkingBudget: 2000 } } });
                 $('#data-result-body').innerHTML = parseMD(r1.text);
 
                 $('#loading-title').innerText = '正在深度規劃時間表...';
-                const r2 = await ai.models.generateContent({ model: 'gemini-3-pro-preview', contents: `基於攻略：${r1.text}，規劃詳細行程(09:00-21:00)，包含具體順路的景點安排。`, config: { thinkingConfig: { thinkingBudget: 2000 } } });
+                const r2 = await ai.models.generateContent({ model: 'gemini-1.5-pro', contents: `基於攻略：${r1.text}，規劃詳細行程(09:00-21:00)，包含具體順路的景點安排。`, config: { thinkingConfig: { thinkingBudget: 2000 } } });
                 $('#initial-result-body').innerHTML = parseMD(r2.text);
 
                 $('#loading-title').innerText = '正在深化交通與備案細節...';
-                const r3 = await ai.models.generateContent({ model: 'gemini-3-pro-preview', contents: `針對行程：${r2.text}，提供轉乘優化、必買伴手禮清單、與行李準備清單。`, config: { thinkingConfig: { thinkingBudget: 2000 } } });
+                const r3 = await ai.models.generateContent({ model: 'gemini-1.5-pro', contents: `針對行程：${r2.text}，提供轉乘優化、必買伴手禮清單、與行李準備清單。`, config: { thinkingConfig: { thinkingBudget: 2000 } } });
                 $('#detailed-result-body').innerHTML = parseMD(r3.text);
 
                 state.hasGenerated = true;
