@@ -1,0 +1,651 @@
+
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartTrip 萬用出遊工具組</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <!-- Leaflet Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f8fafc;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+        .calendar-day {
+            aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center;
+            border-radius: 12px; font-size: 0.875rem; font-weight: 700; transition: all 0.2s; cursor: pointer;
+        }
+        .calendar-day.selected { background-color: #2563eb; color: white; }
+        .calendar-day.in-range { background-color: #dbeafe; color: #1e40af; }
+        .calendar-day:hover:not(.selected) { background-color: #f1f5f9; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        
+        #map-explore { height: 350px; border-radius: 2rem; z-index: 1; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        
+        /* Toggle Switch Custom */
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #2563eb; }
+        input:checked + .slider:before { transform: translateX(20px); }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://esm.sh/@google/genai@^1.39.0",
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.563.0"
+  }
+}
+</script>
+</head>
+<body class="pb-24">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm sticky top-0 z-[1000]">
+        <div class="max-w-4xl mx-auto px-4 py-4 space-y-4">
+            <div class="flex items-center justify-between w-full">
+                <div class="flex items-center gap-3">
+                    <div class="bg-blue-600 p-2 rounded-xl text-white shadow-lg">
+                        <i data-lucide="compass" class="w-6 h-6"></i>
+                    </div>
+                    <div class="relative group">
+                        <h1 class="text-xl font-black text-gray-900 tracking-tight">SmartTrip</h1>
+                        <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Universal Travel Kit</p>
+                        <!-- Hidden Developer Options Toggle -->
+                        <button id="dev-toggle" class="absolute -right-6 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-transparent hover:bg-blue-50 transition-colors"></button>
+                    </div>
+                </div>
+                <div id="active-status" class="hidden flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black">
+                    <span class="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span> 行程就緒
+                </div>
+            </div>
+
+            <!-- Tab Navigation -->
+            <nav class="flex gap-2 p-1 bg-gray-100 rounded-2xl overflow-x-auto no-scrollbar">
+                <button data-main-tab="explore" class="main-tab-btn flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-xs font-black transition-all bg-white text-blue-600 shadow-sm">
+                    <i data-lucide="search" class="w-4 h-4"></i> 活動探索
+                </button>
+                <button data-main-tab="guide" class="main-tab-btn flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-xs font-black transition-all text-gray-400 hover:text-gray-600">
+                    <i data-lucide="book-open" class="w-4 h-4"></i> 旅遊規劃書
+                </button>
+            </nav>
+
+            <!-- Guide Sub Nav (Conditional) -->
+            <div id="guide-subnav" class="hidden flex gap-2 p-1 bg-blue-50/50 rounded-2xl animate-fade-in">
+                <button data-sub-tab="input" class="sub-tab-btn flex-1 py-2 text-[10px] font-black rounded-lg bg-white text-blue-600 shadow-sm">打造旅程</button>
+                <button data-sub-tab="data" disabled class="sub-tab-btn flex-1 py-2 text-[10px] font-black rounded-lg text-gray-300 opacity-50 cursor-not-allowed">資料圖卡</button>
+                <button data-sub-tab="initial" disabled class="sub-tab-btn flex-1 py-2 text-[10px] font-black rounded-lg text-gray-300 opacity-50 cursor-not-allowed">初步規劃</button>
+                <button data-sub-tab="detailed" disabled class="sub-tab-btn flex-1 py-2 text-[10px] font-black rounded-lg text-gray-300 opacity-50 cursor-not-allowed">細部規劃</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-4xl mx-auto px-4 pt-6">
+        
+        <!-- Tab: Explore (Activity Map Search) -->
+        <section id="section-explore" class="main-content block animate-fade-in space-y-6">
+            <div class="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden">
+                <div id="map-explore"></div>
+                
+                <div class="p-8 space-y-8">
+                    <!-- Filters Grid -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        
+                        <!-- Left Column: Categories -->
+                        <div class="space-y-6">
+                            <div class="space-y-3">
+                                <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                    <i data-lucide="layers" class="w-3 h-3 text-blue-500"></i> 主類別選擇
+                                </label>
+                                <div id="main-cat-container" class="grid grid-cols-4 gap-2">
+                                    <button data-cat="活動" class="cat-btn p-3 rounded-xl text-[11px] font-black border bg-blue-600 text-white border-blue-600 shadow-md">活動</button>
+                                    <button data-cat="美食" class="cat-btn p-3 rounded-xl text-[11px] font-black border bg-white text-gray-500 border-gray-100">美食</button>
+                                    <button data-cat="景點" class="cat-btn p-3 rounded-xl text-[11px] font-black border bg-white text-gray-500 border-gray-100">景點</button>
+                                    <button data-cat="體驗" class="cat-btn p-3 rounded-xl text-[11px] font-black border bg-white text-gray-500 border-gray-100">體驗</button>
+                                </div>
+                            </div>
+
+                            <div class="space-y-3">
+                                <div class="flex items-center justify-between">
+                                    <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest">細項分類 (複選)</label>
+                                    <button id="sub-cat-toggle-all" class="text-[10px] font-black text-blue-600 hover:underline">全選 / 取消</button>
+                                </div>
+                                <div id="sub-cat-container" class="flex flex-wrap gap-2">
+                                    <!-- JS will inject sub-categories -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Column: Date, Price, Keywords -->
+                        <div class="space-y-6">
+                            <div class="space-y-3">
+                                <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                    <i data-lucide="calendar" class="w-3 h-3 text-emerald-500"></i> 搜尋日期 & 數量
+                                </label>
+                                <div class="flex gap-2">
+                                    <input type="date" id="explore-date" class="flex-1 p-3 bg-slate-50 border border-slate-100 rounded-xl font-black text-xs outline-none focus:bg-white">
+                                    <input type="number" id="explore-count" value="10" min="1" max="20" class="w-16 p-3 bg-slate-50 border border-slate-100 rounded-xl font-black text-xs text-center">
+                                </div>
+                            </div>
+
+                            <div class="space-y-3">
+                                <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                    <i data-lucide="dollar-sign" class="w-3 h-3 text-amber-500"></i> 費用範圍
+                                </label>
+                                <div class="flex gap-2">
+                                    <select id="fee-type" class="flex-1 p-3 bg-slate-50 border border-slate-100 rounded-xl font-black text-xs outline-none">
+                                        <option value="all">不限預算</option>
+                                        <option value="free">完全免費</option>
+                                        <option value="range">自訂範圍</option>
+                                    </select>
+                                    <div id="fee-range-inputs" class="hidden flex gap-2">
+                                        <input type="number" id="min-price" placeholder="Min" class="w-16 p-3 bg-white border border-slate-100 rounded-xl font-black text-[10px]">
+                                        <input type="number" id="max-price" placeholder="Max" class="w-16 p-3 bg-white border border-slate-100 rounded-xl font-black text-[10px]">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="space-y-3">
+                                <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                    <i data-lucide="search" class="w-3 h-3 text-slate-400"></i> 其他關鍵字
+                                </label>
+                                <input type="text" id="explore-keyword" placeholder="輸入關鍵字，如：落羽松..." class="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl font-black text-xs outline-none focus:bg-white transition-all">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Options Footer -->
+                    <div class="pt-6 border-t border-slate-50 flex flex-col md:flex-row items-center justify-between gap-6">
+                        <div class="flex items-center gap-6">
+                            <label class="flex items-center gap-3 cursor-pointer group">
+                                <div class="switch">
+                                    <input type="checkbox" id="hide-inactive-toggle">
+                                    <span class="slider"></span>
+                                </div>
+                                <span class="text-[10px] font-black text-gray-500 uppercase tracking-widest group-hover:text-blue-600 transition-colors">隱藏已結束項目</span>
+                            </label>
+                            <div class="flex items-center gap-2 text-[10px] font-black text-gray-300">
+                                <i data-lucide="map-pin" class="w-3 h-3"></i>
+                                中心點：<span id="coord-display">25.0339, 121.5644</span>
+                            </div>
+                        </div>
+
+                        <button id="explore-search-btn" class="w-full md:w-auto px-12 py-5 bg-gray-900 hover:bg-black text-white rounded-3xl font-black shadow-2xl flex items-center justify-center gap-4 transition-all active:scale-95 group">
+                            <i data-lucide="sparkles" class="w-5 h-5 text-amber-400 group-hover:animate-spin"></i> 開始 AI 聯網探索
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Search Results Display Area -->
+            <div id="explore-results" class="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
+                <div class="col-span-full py-32 text-center space-y-4 opacity-40">
+                    <div class="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i data-lucide="map" class="w-10 h-10 text-slate-400"></i>
+                    </div>
+                    <p class="text-sm font-black italic tracking-widest text-slate-500 uppercase">在地圖點擊搜尋中心後，開啟 AI 探索之旅</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab: Guide (Form & AI Results) -->
+        <section id="section-guide-input" class="main-content hidden animate-fade-in">
+             <div class="bg-white rounded-[2.5rem] shadow-2xl border border-gray-100 p-8 space-y-8">
+                 <div class="flex items-center gap-4">
+                    <div class="bg-gray-900 p-3 rounded-2xl text-white shadow-lg"><i data-lucide="edit-3"></i></div>
+                    <div>
+                        <h2 class="text-2xl font-black text-gray-900 tracking-tight">打造專屬旅程</h2>
+                        <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">SmartTrip Expert Planning</p>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="space-y-4">
+                        <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2"><i data-lucide="map-pin" class="w-3 h-3 text-red-500"></i> 旅遊目的地</label>
+                        <div id="destination-list" class="space-y-3">
+                            <input type="text" placeholder="例如：東京、巴黎..." class="dest-input w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-black text-black outline-none focus:bg-white focus:ring-4 focus:ring-blue-50 transition-all">
+                        </div>
+                        <button id="add-dest-btn" class="w-full p-4 border-2 border-dashed border-slate-200 text-slate-400 rounded-2xl font-black hover:bg-slate-50 hover:border-blue-300 hover:text-blue-500 transition-all flex items-center justify-center gap-2 text-xs">
+                            <i data-lucide="plus" class="w-4 h-4"></i> 新增目的地
+                        </button>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2"><i data-lucide="calendar" class="w-3 h-3 text-blue-500"></i> 旅遊日期</label>
+                        <div class="relative">
+                            <button id="calendar-trigger" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-black text-left flex items-center justify-between hover:bg-white transition-all shadow-sm">
+                                <span id="date-display" class="text-slate-400">點擊選擇日期範圍</span>
+                                <i data-lucide="calendar" class="w-5 h-5 text-blue-500"></i>
+                            </button>
+                            <div id="calendar-modal" class="hidden absolute top-full left-0 right-0 mt-3 z-[1001] bg-white shadow-2xl rounded-[2rem] border border-gray-100 overflow-hidden animate-fade-in">
+                                <div class="p-5 bg-gray-900 text-white flex items-center justify-between">
+                                    <button id="prev-month"><i data-lucide="chevron-left"></i></button>
+                                    <span id="calendar-month-year" class="font-black italic">2024年 5月</span>
+                                    <button id="next-month"><i data-lucide="chevron-right"></i></button>
+                                </div>
+                                <div class="p-5">
+                                    <div class="calendar-grid text-center mb-2"><span class="text-[10px] font-black text-gray-400">日</span><span class="text-[10px] font-black text-gray-400">一</span><span class="text-[10px] font-black text-gray-400">二</span><span class="text-[10px] font-black text-gray-400">三</span><span class="text-[10px] font-black text-gray-400">四</span><span class="text-[10px] font-black text-gray-400">五</span><span class="text-[10px] font-black text-gray-400">六</span></div>
+                                    <div id="calendar-days" class="calendar-grid"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pt-8 border-t border-slate-100 flex justify-center">
+                    <button id="generate-btn" class="px-12 py-5 bg-gray-900 hover:bg-black text-white rounded-[2rem] font-black shadow-2xl flex items-center gap-4 transition-all active:scale-95 group">
+                        <i data-lucide="sparkles" class="w-5 h-5 group-hover:animate-spin"></i> 生成功略與行程
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Sub Tabs Content Sections -->
+        <section id="section-guide-data" class="main-content hidden animate-fade-in"><div class="bg-white rounded-[2.5rem] p-10 shadow-sm border border-gray-100 min-h-[600px]"><div id="data-result-body" class="prose max-w-none"></div></div></section>
+        <section id="section-guide-initial" class="main-content hidden animate-fade-in"><div class="bg-white rounded-[2.5rem] p-10 shadow-sm border border-gray-100 min-h-[600px]"><div id="initial-result-body" class="prose max-w-none"></div></div></section>
+        <section id="section-guide-detailed" class="main-content hidden animate-fade-in"><div class="bg-white rounded-[2.5rem] p-10 shadow-sm border border-gray-100 min-h-[600px]"><div id="detailed-result-body" class="prose max-w-none"></div></div></section>
+
+    </main>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="hidden fixed inset-0 z-[2000] bg-white/80 backdrop-blur-md flex flex-col items-center justify-center space-y-6">
+        <div class="relative">
+            <div class="w-24 h-24 border-8 border-slate-100 border-t-blue-600 rounded-full animate-spin"></div>
+            <i data-lucide="sparkles" class="absolute inset-0 m-auto text-blue-600 w-8 h-8 animate-pulse"></i>
+        </div>
+        <div class="text-center">
+            <h3 id="loading-title" class="text-2xl font-black text-gray-900 italic tracking-tight">AI 顧問分析中...</h3>
+            <p id="loading-sub" class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2 animate-pulse">Connecting to Live Search Grounding</p>
+        </div>
+    </div>
+
+    <!-- Hidden Developer Database Section -->
+    <div id="section-database" class="hidden fixed inset-0 z-[1100] bg-white p-8 overflow-y-auto animate-fade-in">
+        <div class="max-w-4xl mx-auto space-y-8 pb-20">
+            <div class="flex items-center justify-between border-b pb-6">
+                <div class="flex items-center gap-4">
+                    <div class="bg-blue-600 p-3 rounded-2xl text-white shadow-lg"><i data-lucide="layout"></i></div>
+                    <div>
+                        <h2 class="text-2xl font-black tracking-tight italic">釘選項目資料庫</h2>
+                        <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Stored Activity Database</p>
+                    </div>
+                </div>
+                <button onclick="document.getElementById('section-database').classList.add('hidden')" class="p-3 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors shadow-sm"><i data-lucide="x"></i></button>
+            </div>
+            <div id="db-list" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- DB Items -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Script Block -->
+    <script type="module">
+        import { GoogleGenAI } from "@google/genai";
+
+        // --- App State ---
+        const state = {
+            mainTab: 'explore',
+            guideTab: 'input',
+            hasGenerated: false,
+            destinations: [''],
+            dateRange: { start: null, end: null },
+            db: JSON.parse(localStorage.getItem('smarttrip_db') || '[]'),
+            map: null,
+            mapCenter: [25.0339, 121.5644],
+            marker: null,
+            calendar: { year: new Date().getFullYear(), month: new Date().getMonth() },
+            
+            // Explore Filters
+            explore: {
+                category: '活動',
+                subCategories: ['展覽'],
+                keyword: '',
+                date: new Date().toISOString().split('T')[0],
+                count: 10,
+                feeType: 'all',
+                minPrice: 0,
+                maxPrice: 2000,
+                hideInactive: false
+            }
+        };
+
+        const CATEGORIES_DATA = {
+            '活動': ['展覽', '演出', '燈會', '花期', '市集', '派對'],
+            '美食': ['景觀餐廳', '排隊名店', '特色小吃', '宵夜美食', '甜點咖啡'],
+            '景點': ['網美打卡', '自然景觀', '歷史古蹟', '公園設施', '夜景推薦'],
+            '體驗': ['手作課程', '密室逃脫', '運動競賽', '露營郊遊']
+        };
+
+        const $ = (s) => document.querySelector(s);
+        const $$ = (s) => document.querySelectorAll(s);
+
+        lucide.createIcons();
+
+        // --- Helper: Save to Local Storage ---
+        const saveDB = () => localStorage.setItem('smarttrip_db', JSON.stringify(state.db));
+
+        // --- UI Navigation Logic ---
+        const updateVisibility = () => {
+            $$('.main-content').forEach(c => c.classList.add('hidden'));
+            if (state.mainTab === 'explore') {
+                $('#section-explore').classList.remove('hidden');
+                $('#guide-subnav').classList.add('hidden');
+                if (state.map) setTimeout(() => state.map.invalidateSize(), 100);
+            } else {
+                $('#guide-subnav').classList.remove('hidden');
+                $(`#section-guide-${state.guideTab}`).classList.remove('hidden');
+            }
+
+            $$('.main-tab-btn').forEach(btn => {
+                const isActive = btn.dataset.mainTab === state.mainTab;
+                btn.className = `main-tab-btn flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-xs font-black transition-all ${isActive ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`;
+            });
+
+            $$('.sub-tab-btn').forEach(btn => {
+                const isActive = btn.dataset.subTab === state.guideTab;
+                if (!btn.disabled) {
+                    btn.className = `sub-tab-btn flex-1 py-2 text-[10px] font-black rounded-lg transition-all ${isActive ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`;
+                }
+            });
+        };
+
+        $$('.main-tab-btn').forEach(btn => btn.onclick = () => { state.mainTab = btn.dataset.mainTab; updateVisibility(); });
+        $$('.sub-tab-btn').forEach(btn => btn.onclick = () => { state.guideTab = btn.dataset.subTab; updateVisibility(); });
+
+        // --- Explore UI Filters Injection ---
+        const renderSubCategories = () => {
+            const container = $('#sub-cat-container');
+            container.innerHTML = '';
+            const subs = CATEGORIES_DATA[state.explore.category];
+            subs.forEach(s => {
+                const isActive = state.explore.subCategories.includes(s);
+                const btn = document.createElement('button');
+                btn.className = `px-3 py-1.5 rounded-lg text-[10px] font-black border transition-all ${isActive ? 'bg-blue-100 text-blue-700 border-blue-200 shadow-sm' : 'bg-slate-50 text-gray-400 border-transparent hover:bg-slate-100'}`;
+                btn.innerText = s;
+                btn.onclick = () => {
+                    if (state.explore.subCategories.includes(s)) {
+                        state.explore.subCategories = state.explore.subCategories.filter(i => i !== s);
+                    } else {
+                        state.explore.subCategories.push(s);
+                    }
+                    renderSubCategories();
+                };
+                container.appendChild(btn);
+            });
+        };
+
+        $$('.cat-btn').forEach(btn => btn.onclick = () => {
+            state.explore.category = btn.dataset.cat;
+            state.explore.subCategories = [CATEGORIES_DATA[state.explore.category][0]];
+            $$('.cat-btn').forEach(b => b.className = 'cat-btn p-3 rounded-xl text-[11px] font-black border bg-white text-gray-500 border-gray-100');
+            btn.className = 'cat-btn p-3 rounded-xl text-[11px] font-black border bg-blue-600 text-white border-blue-600 shadow-md';
+            renderSubCategories();
+        });
+
+        $('#sub-cat-toggle-all').onclick = () => {
+            const all = CATEGORIES_DATA[state.explore.category];
+            state.explore.subCategories = (state.explore.subCategories.length === all.length) ? [all[0]] : [...all];
+            renderSubCategories();
+        };
+
+        $('#fee-type').onchange = (e) => {
+            state.explore.feeType = e.target.value;
+            $('#fee-range-inputs').classList.toggle('hidden', e.target.value !== 'range');
+        };
+
+        // --- Explore Map Interaction (The Pinning Center Point) ---
+        const initMap = () => {
+            if (state.map) return;
+            state.map = L.map('map-explore', { zoomControl: false }).setView(state.mapCenter, 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(state.map);
+            state.marker = L.marker(state.mapCenter, { draggable: true }).addTo(state.map);
+            
+            const updateCoords = (lat, lng) => {
+                state.mapCenter = [lat, lng];
+                $('#coord-display').innerText = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+            };
+
+            state.map.on('click', (e) => {
+                updateCoords(e.latlng.lat, e.latlng.lng);
+                state.marker.setLatLng(e.latlng);
+            });
+            state.marker.on('dragend', (e) => {
+                const pos = e.target.getLatLng();
+                updateCoords(pos.lat, pos.lng);
+            });
+        };
+
+        // --- Explore AI Search with Real-Time Grounding ---
+        $('#explore-search-btn').onclick = async () => {
+            const config = state.explore;
+            config.keyword = $('#explore-keyword').value;
+            config.date = $('#explore-date').value || new Date().toISOString().split('T')[0];
+            config.count = parseInt($('#explore-count').value) || 10;
+            config.minPrice = parseInt($('#min-price').value) || 0;
+            config.maxPrice = parseInt($('#max-price').value) || 2000;
+            config.hideInactive = $('#hide-inactive-toggle').checked;
+
+            $('#loading-overlay').classList.remove('hidden');
+            $('#loading-title').innerText = 'AI 正在進行聯網搜尋與分析...';
+
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            
+            let feePrompt = (config.feeType === 'free') ? "必須是完全免費的地點。" : (config.feeType === 'range' ? `費用必須在新台幣 ${config.minPrice} ~ ${config.maxPrice} 元之間。` : "無預算限制。");
+
+            const prompt = `你是旅遊規劃大師。請在經緯度 (${state.mapCenter[0]}, ${state.mapCenter[1]}) 周邊 1km 內，搜尋「${config.category}」相關資訊。
+            分類需求：${config.subCategories.join('、')}。
+            日期限制：${config.date} 前後。
+            關鍵字：${config.keyword || '熱門、最新、限時活動'}。
+            費用要求：${feePrompt}
+            
+            請判定地點當前狀態 (active/ended/closed)。
+            回傳精確 ${config.count} 筆 JSON 陣列。格式：[{title, address, summary, price, hours, status, category, subCategory}]。`;
+
+            try {
+                const response = await ai.models.generateContent({
+                    model: 'gemini-3-flash-preview',
+                    contents: prompt,
+                    config: { responseMimeType: "application/json", tools: [{ googleSearch: {} }] }
+                });
+                
+                let results = JSON.parse(response.text || '[]');
+                const groundingUrls = response.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(c => c.web?.uri).filter(Boolean) || [];
+
+                if (config.hideInactive) {
+                    results = results.filter(r => r.status === 'active');
+                }
+
+                renderSearchResults(results, groundingUrls);
+            } catch (err) {
+                console.error(err);
+                alert('AI 搜尋暫時遇到障礙，請稍後再試。');
+            } finally {
+                $('#loading-overlay').classList.add('hidden');
+            }
+        };
+
+        const renderSearchResults = (results, sourceUrls) => {
+            const container = $('#explore-results');
+            container.innerHTML = '';
+            
+            if (!results.length) {
+                container.innerHTML = '<div class="col-span-full py-24 text-center text-gray-400 font-bold italic">找不到符合條件的結果，請試著擴大搜尋範圍</div>';
+                return;
+            }
+
+            results.forEach((res, i) => {
+                const isInactive = res.status !== 'active';
+                const div = document.createElement('div');
+                div.className = `bg-white rounded-[2.5rem] p-6 shadow-sm border border-gray-100 flex flex-col gap-4 animate-fade-in ${isInactive ? 'opacity-60 grayscale bg-gray-50' : 'hover:shadow-2xl hover:-translate-y-2 transition-all cursor-default'}`;
+                div.style.animationDelay = `${i * 0.05}s`;
+                
+                div.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div class="flex gap-2">
+                             <span class="text-[10px] font-black px-2 py-1 rounded-lg bg-blue-50 text-blue-600 uppercase tracking-widest">${res.subCategory || res.category}</span>
+                             ${isInactive ? `<span class="text-[10px] font-black px-2 py-1 rounded-lg bg-red-100 text-red-600 uppercase tracking-widest">${res.status === 'ended' ? '已結束' : '永久停業'}</span>` : ''}
+                        </div>
+                        <button class="pin-btn p-2.5 bg-slate-50 text-slate-300 hover:text-blue-600 transition-all rounded-2xl shadow-sm border border-transparent hover:border-blue-100"><i data-lucide="pin"></i></button>
+                    </div>
+                    <div class="space-y-1">
+                        <h4 class="text-xl font-black text-gray-900 leading-tight">${res.title}</h4>
+                        <p class="text-[10px] text-gray-400 font-bold flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3 text-red-400"></i> ${res.address}</p>
+                    </div>
+                    <p class="text-xs text-gray-600 font-medium leading-relaxed line-clamp-3">${res.summary}</p>
+                    <div class="pt-4 border-t border-slate-50 flex items-center justify-between">
+                        <div class="flex items-center gap-4 text-[10px] font-black text-gray-400 uppercase">
+                             <span class="flex items-center gap-1"><i data-lucide="dollar-sign" class="w-3 h-3 text-emerald-500"></i> ${res.price || '免費'}</span>
+                             <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3 text-amber-500"></i> ${res.hours || '暫無資訊'}</span>
+                        </div>
+                        <button onclick="window.open('https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(res.title + ' ' + res.address)}', '_blank')" class="text-blue-600 text-[11px] font-black flex items-center gap-1.5 hover:underline group">
+                            <i data-lucide="navigation" class="w-4 h-4 group-hover:rotate-12 transition-transform"></i> 導航
+                        </button>
+                    </div>
+                    ${sourceUrls.length ? `
+                        <div class="flex gap-2 mt-2 pt-2 border-t border-dotted border-slate-100">
+                            <span class="text-[9px] font-black text-gray-300 uppercase tracking-widest">AI 來源</span>
+                            <div class="flex gap-2">
+                                ${sourceUrls.slice(0, 2).map((u, idx) => `<a href="${u}" target="_blank" class="text-[9px] text-blue-400 font-black hover:underline">資料 ${idx+1}</a>`).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                `;
+
+                // The Pinning Functionality
+                div.querySelector('.pin-btn').onclick = (e) => {
+                    const btn = e.currentTarget;
+                    const isPinned = state.db.some(d => d.title === res.title);
+                    if (!isPinned) {
+                        state.db.push(res);
+                        btn.className = 'pin-btn p-2.5 bg-blue-600 text-white rounded-2xl shadow-lg animate-bounce';
+                        saveDB();
+                    } else {
+                        state.db = state.db.filter(d => d.title !== res.title);
+                        btn.className = 'pin-btn p-2.5 bg-slate-50 text-slate-300 rounded-2xl';
+                        saveDB();
+                    }
+                };
+                container.appendChild(div);
+            });
+            lucide.createIcons();
+        };
+
+        // --- Guide Planning Logic (Calendar & AI) ---
+        const updateDateDisplay = () => {
+            const d = $('#date-display');
+            if (state.dateRange.start) {
+                d.innerText = state.dateRange.end ? `${state.dateRange.start} ~ ${state.dateRange.end}` : `${state.dateRange.start} (選返回日期...)`;
+                d.classList.remove('text-slate-400'); d.classList.add('text-black');
+            }
+        };
+
+        const renderCalendar = () => {
+            const container = $('#calendar-days'); container.innerHTML = '';
+            $('#calendar-month-year').innerText = `${state.calendar.year}年 ${state.calendar.month + 1}月`;
+            const firstIdx = new Date(state.calendar.year, state.calendar.month, 1).getDay();
+            const daysIn = new Date(state.calendar.year, state.calendar.month + 1, 0).getDate();
+            for (let i = 0; i < firstIdx; i++) container.appendChild(document.createElement('div'));
+            for (let d = 1; d <= daysIn; d++) {
+                const dayDate = new Date(state.calendar.year, state.calendar.month, d);
+                const ds = dayDate.toISOString().split('T')[0];
+                const btn = document.createElement('button');
+                btn.className = `calendar-day ${state.dateRange.start === ds || state.dateRange.end === ds ? 'selected' : (state.dateRange.start && state.dateRange.end && ds > state.dateRange.start && ds < state.dateRange.end ? 'in-range' : '')}`;
+                btn.innerText = d;
+                btn.onclick = () => {
+                    if (!state.dateRange.start || (state.dateRange.start && state.dateRange.end)) { state.dateRange.start = ds; state.dateRange.end = null; }
+                    else { if (ds < state.dateRange.start) state.dateRange.start = ds; else state.dateRange.end = ds; $('#calendar-modal').classList.add('hidden'); }
+                    updateDateDisplay(); renderCalendar();
+                };
+                container.appendChild(btn);
+            }
+        };
+
+        $('#calendar-trigger').onclick = () => $('#calendar-modal').classList.toggle('hidden');
+        $('#prev-month').onclick = () => { state.calendar.month--; if (state.calendar.month < 0) { state.calendar.month = 11; state.calendar.year--; } renderCalendar(); };
+        $('#next-month').onclick = () => { state.calendar.month++; if (state.calendar.month > 11) { state.calendar.month = 0; state.calendar.year++; } renderCalendar(); };
+
+        const parseMD = (text) => text.replace(/^# (.*$)/gim, '<h3 class="text-2xl font-black text-gray-900 border-b-2 border-slate-50 pb-3 pt-8 tracking-tight italic">$1</h3>').replace(/^## (.*$)/gim, '<h4 class="text-xl font-black text-blue-600 pt-6">$1</h4>').replace(/\*\*(.*)\*\*/gim, '<strong class="text-blue-600 font-black">$1</strong>').split('\n').map(l => l.trim() ? `<div class="flex items-center flex-wrap gap-2 leading-relaxed mb-1">${l}</div>` : '<br/>').join('');
+
+        $('#generate-btn').onclick = async () => {
+            const dests = Array.from($$('.dest-input') || []).map(i => i.value).filter(Boolean);
+            if (!dests.length || !state.dateRange.start || !state.dateRange.end) return alert('請完整填寫目的地與日期範圍');
+            
+            $('#loading-overlay').classList.remove('hidden');
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const commonInfo = `目的地：${dests.join('、')}，日期：${state.dateRange.start} ~ ${state.dateRange.end}`;
+
+            try {
+                $('#loading-title').innerText = '正在生成的極致攻略圖卡...';
+                const r1 = await ai.models.generateContent({ model: 'gemini-3-pro-preview', contents: `${commonInfo}，請製作 1.當地概況 2.必玩 3.必吃 4.交通住宿 5.預算與季節建議。請使用繁體中文 Markdown。`, config: { thinkingConfig: { thinkingBudget: 2000 } } });
+                $('#data-result-body').innerHTML = parseMD(r1.text);
+
+                $('#loading-title').innerText = '正在深度規劃時間表...';
+                const r2 = await ai.models.generateContent({ model: 'gemini-3-pro-preview', contents: `基於攻略：${r1.text}，規劃詳細行程(09:00-21:00)，包含具體順路的景點安排。`, config: { thinkingConfig: { thinkingBudget: 2000 } } });
+                $('#initial-result-body').innerHTML = parseMD(r2.text);
+
+                $('#loading-title').innerText = '正在深化交通與備案細節...';
+                const r3 = await ai.models.generateContent({ model: 'gemini-3-pro-preview', contents: `針對行程：${r2.text}，提供轉乘優化、必買伴手禮清單、與行李準備清單。`, config: { thinkingConfig: { thinkingBudget: 2000 } } });
+                $('#detailed-result-body').innerHTML = parseMD(r3.text);
+
+                state.hasGenerated = true;
+                $('#active-status').classList.remove('hidden');
+                $$('.sub-tab-btn').forEach(btn => {
+                    if (btn.dataset.subTab !== 'input') { btn.disabled = false; btn.classList.remove('text-gray-300', 'opacity-50', 'cursor-not-allowed'); }
+                });
+                state.guideTab = 'data'; updateVisibility();
+            } catch (err) { console.error(err); alert('分析中斷，請稍後重試。'); } finally { $('#loading-overlay').classList.add('hidden'); }
+        };
+
+        // --- Developer Hidden Database View Toggle ---
+        $('#dev-toggle').onclick = () => {
+            const dbList = $('#db-list'); dbList.innerHTML = '';
+            if (!state.db.length) { dbList.innerHTML = '<div class="col-span-full py-20 text-center opacity-30 italic font-black">資料庫內尚無釘選景點</div>'; }
+            state.db.forEach((d, idx) => {
+                const item = document.createElement('div');
+                item.className = 'bg-slate-50 p-6 rounded-[2rem] border border-slate-100 flex flex-col gap-3 relative animate-fade-in group shadow-sm hover:shadow-md transition-all';
+                item.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <span class="text-[9px] font-black text-blue-500 uppercase">${d.category || '景點'}</span>
+                        <button class="remove-db text-slate-200 hover:text-red-500 transition-colors" data-idx="${idx}"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    </div>
+                    <h5 class="font-black text-gray-900 leading-tight">${d.title}</h5>
+                    <p class="text-[10px] text-gray-400 font-bold">${d.address}</p>
+                `;
+                item.querySelector('.remove-db').onclick = (e) => {
+                    state.db.splice(idx, 1);
+                    saveDB();
+                    $('#dev-toggle').click(); // Refresh view
+                };
+                dbList.appendChild(item);
+            });
+            $('#section-database').classList.remove('hidden');
+            lucide.createIcons();
+        };
+
+        // --- Bootstrap ---
+        initMap();
+        renderSubCategories();
+        renderCalendar();
+        updateVisibility();
+    </script>
+</body>
+</html>
