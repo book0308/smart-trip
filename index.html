@@ -595,7 +595,7 @@
 
             try {
                 $('#loading-title').innerText = '正在生成的極致攻略圖卡...';
-                const r1 = await ai.models.generateContent({ model: 'gemini-1.5-pro', contents: `${commonInfo}，請製作 1.當地概況 2.必玩 3.必吃 4.交通住宿 5.預算與季節建議。請使用繁體中文 Markdown。`, config: { thinkingConfig: { thinkingBudget: 2000 } } });
+                const r1 = await ai.models.generateContent({ model: 'gemini-1.5-pro', contents: `${commonInfo}，請製作 1.當地概況 2.必玩 3.必吃 4.交通住宿 5.預算與季節建議。請使用繁體中文 Markdown。`,  });
                 $('#data-result-body').innerHTML = parseMD(r1.text);
 
                 $('#loading-title').innerText = '正在深度規劃時間表...';
