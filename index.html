@@ -447,7 +447,7 @@
             $('#loading-overlay').classList.remove('hidden');
             $('#loading-title').innerText = 'AI 正在進行聯網搜尋與分析...';
 
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const ai = new GoogleGenAI({ apiKey:"AIzaSyCynvUH17gVpLuvSEz8EfiBENFHIuJGn3Q" });
             
             let feePrompt = (config.feeType === 'free') ? "必須是完全免費的地點。" : (config.feeType === 'range' ? `費用必須在新台幣 ${config.minPrice} ~ ${config.maxPrice} 元之間。` : "無預算限制。");
 
@@ -590,7 +590,7 @@
             if (!dests.length || !state.dateRange.start || !state.dateRange.end) return alert('請完整填寫目的地與日期範圍');
             
             $('#loading-overlay').classList.remove('hidden');
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const ai = new GoogleGenAI({ apiKey: "AIzaSyCynvUH17gVpLuvSEz8EfiBENFHIuJGn3Q"});
             const commonInfo = `目的地：${dests.join('、')}，日期：${state.dateRange.start} ~ ${state.dateRange.end}`;
 
             try {
